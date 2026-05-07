@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Sólida - BI Premium</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --azul: #2B446A; --laranja: #F57C00; --verde: #2E7D32; --roxo: #673AB7; --vermelho: #D32F2F; --fundo: #F8F9FA; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--fundo); margin: 0; padding: 0; }
+        #lock-screen { position: fixed; inset: 0; background: var(--azul); display: flex; align-items: center; justify-content: center; z-index: 10000; }
+        .lock-card { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.4); width: 320px; }
+        input[type="password"] { width: 100%; padding: 12px; margin: 20px 0; border: 2px solid #ddd; border-radius: 8px; text-align: center; }
+        #content { display: none; padding: 25px; }
+        .header { display: flex; justify-content: space-between; align-items: center; background: white; padding: 20px 40px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        .logo { height: 75px; }
+        .btn-import { background: var(--laranja); color: white; border: none; padding: 12px 25px; border-radius: 12px; font-weight: 700; cursor: pointer; }
+        .headline { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 30px; }
+        .h-card { background: var(--azul); color: white; padding: 15px; border-radius: 15px; text-align: center; }
+        .h-val { font-size: 1.1rem; font-weight: 700; display: block; margin-top: 5px; }
+        .h-label { font-size: 0.65rem; text-transform: uppercase; opacity: 0.8; }
+        .main-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; }
+        .card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); }
+        .card-full { grid-column: span 2; }
+        .title { font-size: 1.1rem; font-weight: 700; margin-bottom: 15px; border-left: 5px solid var(--laranja); padding-left: 12px; }
+        .stats-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: #f8f9fa; padding: 15px; border-radius: 12px; margin-bottom: 20px; font-size: 0.8rem; font-weight: 700; }
+        .stats-item { display: flex; flex-direction: column; }
+        .stats-item small { opacity: 0.7; font-weight: 400; font-size: 0.7rem; }
+        .chart-box { height: 320px; position: relative; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div id="lock-screen">
+        <div class="lock-card">
+            <h2 style="color: var(--azul)">SÓLIDA</h2>
+            <p>Acesso Restrito</p>
+            <input type="password" id="pass" placeholder="Senha de Acesso">
+            <button class="btn-import" style="width: 100%" onclick="checkPass()">Entrar</button>
+        </div>
+    </div>
+
+    <div id="content">
+        <div class="header">
+            <img src="C:/Users/Usuario/Desktop/logo.jpeg" alt="Logo Sólida" class="logo">
+            <h1 style="margin:0; font-size: 1.4rem;">BI de Importados Sólida</h1>
+            <button class="btn-import" onclick="document.getElementById('fileIn').click()">📂 Atualizar Base</button>
+            <input type="file" id="fileIn" style="display:none" onchange="handleImport(event)">
+        </div>
+
+        <div class="headline" id="topKpis"></div>
+        <div class="main-grid" id="chartsGrid">
+            <div class="card card-full">
+                <div class="title">Evolução Histórica Comparativa (2023 - 2026)</div>
+                <div class="chart-box"><canvas id="evolLine"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const fmt = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        // BANCO DE DADOS COM PERSISTÊNCIA (LocalStorage)
+        let db = JSON.parse(localStorage.getItem('solida_db_final')) || {
+            "2023": { bruto: [0,0,0,0,0,0,0,0,0,81696.86,102475.66,87308.52], liquido: [0,0,0,0,0,0,0,0,0,80622.26,99593.75,85226.88], lucro_v: [0,0,0,0,0,0,0,0,0,30554.49,34496.05,30876.76], lucro_p: [0,0,0,0,0,0,0,0,0,37.4,33.7,35.4], dev: [0,0,0,0,0,0,0,0,0,1074.60,2881.91,2081.64], pos: 316 },
+            "2024": { bruto: [80680.65,108721.82,110118.09,142494.06,109647.63,105475.64,114264.64,116442.10,106471.28,129634.49,142285.86,113216.71], liquido: [79602.17,100498.69,107831.99,139063.82,105960.93,104611.84,108731.76,115619.93,100324.35,127217.89,139615.17,107948.10], lucro_v: [27279.28,35288.89,35640.16,48231.05,38972.82,39690.82,35622.43,37933.92,33616.03,38036.65,44346.33,33502.29], lucro_p: [33.8,32.5,32.4,33.9,35.5,37.6,31.2,32.6,31.6,29.3,31.2,29.6], dev: [1078.48,8223.13,2286.10,3430.24,3686.70,863.80,5532.88,822.17,6146.93,2416.60,2670.69,5268.61], pos: 1640 },
+            "2025": { bruto: [118052.24,130145.36,120604.83,120175.71,130270.44,123237.89,140491.16,149063.93,139725.27,147376.66,99616.31,138247.37], liquido: [114577.02,125715.59,117069.42,117799.05,119600.03,121364.79,138875.27,144788.38,138123.07,145291.34,98818.83,134586.59], lucro_v: [42934.36,48221.87,42542.08,43229.76,43703.26,43231.74,47923.76,49997.59,49170.50,53089.41,34352.60,45976.65], lucro_p: [36.4,37.1,35.3,36,33.6,35.1,34.1,33.5,35.2,36,34.5,33.3], dev: [3475.22,4429.77,3535.41,2376.66,10670.41,1873.10,1615.89,4275.55,1602.20,2085.32,797.48,3660.78], pos: 1932 },
+            "2026": { bruto: [140999.18,145192.17,192976.59,204544.65,14093.07,0,0,0,0,0,0,0], liquido: [138328.96,142992.17,190531.07,197211.24,12703.25,0,0,0,0,0,0,0], lucro_v: [47501.99,49821.36,66251.36,66909.32,4528.11,0,0,0,0,0,0,0], lucro_p: [33.7,34.3,34.3,32.7,32.1,0,0,0,0,0,0,0], dev: [2670.22,2200,2445.52,7333.41,1389.82,0,0,0,0,0,0,0], pos: 851 }
+        };
+
+        function checkPass() {
+            if(document.getElementById('pass').value === "Solida123") {
+                document.getElementById('lock-screen').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+                renderDashboard();
+            } else { alert("Senha Incorreta!"); }
+        }
+
+        function handleImport(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const workbook = XLSX.read(e.target.result, {type: 'binary'});
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(sheet);
+                const yearMatch = file.name.match(/\d{4}/);
+                const year = yearMatch ? yearMatch[0] : "2026";
+
+                const bIn = new Array(12).fill(0), lIn = new Array(12).fill(0), lv = new Array(12).fill(0), lp = new Array(12).fill(0), dIn = new Array(12).fill(0);
+                let p = 0;
+                const mesMap = {"Janeiro":0,"Fevereiro":1,"Março":2,"Abril":3,"Maio":4,"Junho":5,"Julho":6,"Agosto":7,"Setembro":8,"Outubro":9,"Novembro":10,"Dezembro":11};
+                
+                json.forEach(row => {
+                    const i = mesMap[row["Mês"]];
+                    if(i !== undefined) {
+                        bIn[i] = row["Vl. venda"] || 0; lIn[i] = row["Vl. venda líquida"] || 0; lv[i] = row["Vl. lucro"] || 0; lp[i] = row["%Lucro"] || 0; dIn[i] = row["Vl. devolução"] || 0; p += row["Qt. positivado"] || 0;
+                    }
+                });
+
+                db[year] = { bruto: bIn, liquido: lIn, lucro_v: lv, lucro_p: lp, dev: dIn, pos: p };
+                // SALVA NO NAVEGADOR
+                localStorage.setItem('solida_db_final', JSON.stringify(db));
+                alert("Dados de " + year + " atualizados e salvos com sucesso!");
+                location.reload();
+            };
+            reader.readAsBinaryString(file);
+        }
+
+        function renderDashboard() {
+            let tB=0, tL=0, tD=0, tLuc=0, tP=0;
+            Object.values(db).forEach(y => {
+                tB += y.bruto.reduce((a,b)=>a+b,0); tL += y.liquido.reduce((a,b)=>a+b,0); tD += y.dev.reduce((a,b)=>a+b,0); tLuc += y.lucro_v.reduce((a,b)=>a+b,0); tP += y.pos;
+            });
+
+            document.getElementById('topKpis').innerHTML = `
+                <div class="h-card"><span class="h-label">Venda Bruta Geral</span><span class="h-val">${fmt(tB)}</span></div>
+                <div class="h-card" style="background:var(--laranja)"><span class="h-label">Venda Líquida Geral</span><span class="h-val">${fmt(tL)}</span></div>
+                <div class="h-card" style="background:var(--vermelho)"><span class="h-label">Total Devoluções</span><span class="h-val">${fmt(tD)}</span></div>
+                <div class="h-card"><span class="h-label">Lucro Total</span><span class="h-val">${fmt(tLuc)}</span></div>
+                <div class="h-card" style="background:var(--laranja)"><span class="h-label">Margem Média Geral</span><span class="h-val">${((tLuc/tL)*100).toFixed(1)}%</span></div>
+                <div class="h-card"><span class="h-label">Total Positivados</span><span class="h-val">${tP.toLocaleString()}</span></div>`;
+
+            new Chart(document.getElementById('evolLine'), {
+                type: 'line',
+                data: {
+                    labels: meses,
+                    datasets: [
+                        { label: '2023', data: db['2023'].liquido, borderColor: '#BDC3C7', borderDash:[5,5], tension:0.3 },
+                        { label: '2024', data: db['2024'].liquido, borderColor: '#607D8B', tension:0.3 },
+                        { label: '2025', data: db['2025'].liquido, borderColor: '#2B446A', tension:0.3 },
+                        { label: '2026', data: db['2026'].liquido, borderColor: '#F57C00', borderWidth:4, tension:0.3 }
+                    ]
+                },
+                options: { maintainAspectRatio: false }
+            });
+
+            Object.keys(db).reverse().forEach(ano => {
+                const d = db[ano];
+                const sB = d.bruto.reduce((a,b)=>a+b,0), sL = d.liquido.reduce((a,b)=>a+b,0), sLuc = d.lucro_v.reduce((a,b)=>a+b,0), sDev = d.dev.reduce((a,b)=>a+b,0);
+                
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `<div class="title">Performance ${ano}</div>
+                    <div class="stats-summary">
+                        <div class="stats-item"><small>Venda Bruta</small>${fmt(sB)}</div>
+                        <div class="stats-item"><small>Venda Líquida</small>${fmt(sL)}</div>
+                        <div class="stats-item"><small>Devol.</small>${fmt(sDev)}</div>
+                        <div class="stats-item"><small>Lucro</small>${fmt(sLuc)}</div>
+                        <div class="stats-item"><small>Margem</small>${((sLuc/sL)*100).toFixed(1)}%</div>
+                        <div class="stats-item"><small>Posit.</small>${d.pos}</div>
+                    </div>
+                    <div class="chart-box"><canvas id="c${ano}"></canvas></div>`;
+                document.getElementById('chartsGrid').appendChild(card);
+
+                new Chart(document.getElementById(`c${ano}`), {
+                    data: {
+                        labels: meses,
+                        datasets: [
+                            { type: 'line', label: 'Margem %', data: d.lucro_p, borderColor: '#673AB7', yAxisID: 'y1', tension: 0.4 },
+                            { type: 'line', label: 'Lucro R$', data: d.lucro_v, borderColor: '#2E7D32', yAxisID: 'y', borderWidth: 3 },
+                            { type: 'bar', label: 'Venda Bruta', data: d.bruto, backgroundColor: '#BDC3C7', borderRadius: 4 },
+                            { type: 'bar', label: 'Venda Líquida', data: d.liquido, backgroundColor: '#F57C00', borderRadius: 4 },
+                            { type: 'bar', label: 'Devolução', data: d.dev, backgroundColor: '#D32F2F', borderRadius: 4 }
+                        ]
+                    },
+                    options: { maintainAspectRatio: false, scales: { 
+                        y: { position: 'left', title: { display: true, text: 'Valores (R$)' } },
+                        y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Margem (%)' } } 
+                    } }
+                });
+            });
+        }
+    </script>
+</body>
+</html>
